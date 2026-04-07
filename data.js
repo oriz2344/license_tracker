@@ -109,6 +109,12 @@ function saveLocalData(data) {
 
 // ── CSV Parser (for manual import fallback) ────────────────────────────────────
 
+// Sanitize cell values to prevent CSV injection (formula injection in Excel)
+function sanitizeCell(val) {
+  if (typeof val !== "string") return val;
+  return val.replace(/^[=+@\-]+/, "");
+}
+
 function parseCSV(text) {
   const lines = text.trim().split("\n");
   if (lines.length < 2) throw new Error("CSV must have a header row and at least one data row.");
@@ -119,15 +125,15 @@ function parseCSV(text) {
     headers.forEach((h, j) => (obj[h] = vals[j] || ""));
     return {
       id: Date.now() + i,
-      client:  obj["client name"] || obj["client"] || "",
-      plan:    obj["ms 365 plan"] || obj["plan"] || "",
+      client:  sanitizeCell(obj["client name"] || obj["client"] || ""),
+      plan:    sanitizeCell(obj["ms 365 plan"] || obj["plan"] || ""),
       seats:   parseInt(obj["seats"]) || 1,
       cost:    parseInt(obj["monthly cost"] || obj["cost"]) || 0,
       start:   obj["start date"] || obj["start"] || "2026-01-01",
       renewal: obj["renewal date"] || obj["renewal"] || "2026-12-31",
-      billing: obj["billing cycle"] || obj["billing"] || "Monthly",
-      email:   obj["email"] || "",
-      notes:   obj["notes"] || "",
+      billing: sanitizeCell(obj["billing cycle"] || obj["billing"] || "Monthly"),
+      email:   sanitizeCell(obj["email"] || ""),
+      notes:   sanitizeCell(obj["notes"] || ""),
     };
   }).filter((r) => r.client);
 }
