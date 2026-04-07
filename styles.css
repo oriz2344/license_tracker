@@ -46,7 +46,6 @@ button, input, select, textarea { font-family: inherit; }
   max-width: 120px;
   object-fit: contain;
   border-radius: 4px;
-  filter: brightness(0) invert(1);  /* makes any logo white to match nav */
 }
 .nav-logo:hover { opacity: .85; }
 .nav-logo:hover::after {
@@ -75,12 +74,13 @@ button, input, select, textarea { font-family: inherit; }
 /* ── Nav ───────────────────────────────────────────────────── */
 .nav {
   position: sticky; top: 0; z-index: 90; height: var(--nav-h);
-  background: var(--brand); display: flex; align-items: center;
-  padding: 0 24px; gap: 12px; box-shadow: 0 2px 12px rgba(255,103,1,.25);
+  background: #fff; display: flex; align-items: center;
+  padding: 0 24px; gap: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.08);
   flex-wrap: nowrap; overflow-x: auto;
+  border-bottom: 1px solid var(--border);
 }
 .nav-logo {
-  display: flex; align-items: center; gap: 9px; color: #fff;
+  display: flex; align-items: center; gap: 9px; color: var(--brand);
   font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700;
   letter-spacing: -.2px; white-space: nowrap;
 }
@@ -88,33 +88,44 @@ button, input, select, textarea { font-family: inherit; }
 .nav-spacer { flex: 1; }
 .nav-pill {
   display: flex; align-items: center; gap: 6px;
-  background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.2);
+  background: var(--brand-lt); border: 1px solid var(--border);
   border-radius: 99px; padding: 4px 10px; white-space: nowrap;
 }
-.nav-date { color: rgba(255,255,255,.85); font-size: 12px; }
+.nav-date { color: var(--muted); font-size: 12px; }
 .live-dot {
   width: 7px; height: 7px; border-radius: 50%; background: #6fcf3a;
   animation: livePulse 2s infinite; flex-shrink: 0;
 }
 .nav-btn {
   height: 32px; padding: 0 14px; border-radius: 99px;
-  border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.12);
-  color: #fff; font-size: 12.5px; font-weight: 500; cursor: pointer;
+  border: 1px solid var(--border); background: var(--brand-lt);
+  color: var(--brand); font-size: 12.5px; font-weight: 500; cursor: pointer;
   display: inline-flex; align-items: center; gap: 6px;
   transition: all var(--transition); white-space: nowrap;
 }
-.nav-btn:hover  { background: rgba(255,255,255,.22); border-color: rgba(255,255,255,.4); }
+.nav-btn:hover  { background: var(--brand-mid); border-color: var(--brand); }
 .nav-btn:disabled { opacity: .6; cursor: not-allowed; }
-.nav-btn.solid  { background: #fff; color: var(--brand); border-color: #fff; }
-.nav-btn.solid:hover { background: #fff3ea; }
+.nav-btn.solid  { background: var(--brand); color: #fff; border-color: var(--brand); }
+.nav-btn.solid:hover { background: var(--brand-dk); }
 .nav-icon-btn {
   width: 34px; height: 34px; border-radius: 50%;
-  border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.12);
-  color: #fff; cursor: pointer; display: inline-flex;
+  border: 1px solid var(--border); background: var(--brand-lt);
+  color: var(--brand); cursor: pointer; display: inline-flex;
   align-items: center; justify-content: center;
   transition: all var(--transition); font-size: 15px; flex-shrink: 0;
 }
-.nav-icon-btn:hover { background: rgba(255,255,255,.22); }
+.nav-icon-btn:hover { background: var(--brand-mid); }
+
+/* Dark mode nav overrides */
+[data-dark="true"] .nav { background: var(--surface); border-bottom-color: var(--border); box-shadow: 0 2px 12px rgba(0,0,0,.3); }
+[data-dark="true"] .nav-logo { color: var(--brand); }
+[data-dark="true"] .nav-pill { background: var(--surface2); border-color: var(--border); }
+[data-dark="true"] .nav-date { color: var(--muted); }
+[data-dark="true"] .nav-btn { background: var(--surface2); color: var(--brand); border-color: var(--border); }
+[data-dark="true"] .nav-btn:hover { background: var(--border); }
+[data-dark="true"] .nav-btn.solid { background: var(--brand); color: #fff; border-color: var(--brand); }
+[data-dark="true"] .nav-icon-btn { background: var(--surface2); color: var(--brand); border-color: var(--border); }
+[data-dark="true"] .nav-icon-btn:hover { background: var(--border); }
 
 /* ── Layout ────────────────────────────────────────────────── */
 .app-wrap { max-width: 1280px; margin: 0 auto; padding: 28px 24px; }
