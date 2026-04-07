@@ -11,28 +11,6 @@
  */
 
 function App() {
-  // ── Logo State ───────────────────────────────────────────────────────────────
-  const [logo, setLogo] = useState(() => localStorage.getItem("ms365_logo") || null);
-  const logoInputRef = useRef();
-
-  function handleLogoUpload(file) {
-    if (!file || !file.type.startsWith("image/")) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target.result;
-      setLogo(dataUrl);
-      localStorage.setItem("ms365_logo", dataUrl);
-      toast("Logo updated!", "success");
-    };
-    reader.readAsDataURL(file);
-  }
-
-  function handleLogoRemove() {
-    setLogo(null);
-    localStorage.removeItem("ms365_logo");
-    toast("Logo removed", "warning");
-  }
-
   // ── Auth & Sync State ────────────────────────────────────────────────────────
   const [account,      setAccount]      = useState(() => getCurrentAccount());
   const [isSigningIn,  setIsSigningIn]  = useState(false);
@@ -283,35 +261,10 @@ function App() {
       {/* SYNC PROGRESS OVERLAY */}
       {isSyncing && <SyncProgress current={syncProgress.current} total={syncProgress.total} />}
 
-      {/* HIDDEN LOGO FILE INPUT */}
-      <input
-        ref={logoInputRef} type="file" accept="image/*"
-        style={{ display: "none" }}
-        onChange={(e) => handleLogoUpload(e.target.files[0])}
-      />
-
       {/* NAV */}
       <nav className="nav">
-        <div
-          className="nav-logo"
-          title={logo ? "Click to change logo · Right-click to remove" : "Click to upload your logo"}
-          onClick={() => logoInputRef.current.click()}
-          onContextMenu={(e) => { e.preventDefault(); if (logo) handleLogoRemove(); }}
-          style={{ cursor: "pointer", userSelect: "none" }}
-        >
-          {logo ? (
-            <img src={logo} alt="Logo" className="nav-logo-img" />
-          ) : (
-            <>
-              <svg viewBox="0 0 24 24" fill="none">
-                <rect width="10" height="10" rx="2" fill="white" opacity=".9" />
-                <rect x="13" width="10" height="10" rx="2" fill="white" opacity=".7" />
-                <rect y="13" width="10" height="10" rx="2" fill="white" opacity=".7" />
-                <rect x="13" y="13" width="10" height="10" rx="2" fill="white" opacity=".9" />
-              </svg>
-            </>
-          )}
-          {CONFIG.COMPANY_NAME}
+        <div className="nav-logo">
+          <img src="assets/xownsolutions.png" alt="XOWN Solutions" className="nav-logo-img" />
         </div>
         <div className="nav-spacer" />
 
