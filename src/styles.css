@@ -276,8 +276,8 @@ input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--brand); cu
 .badge.active::before   { background: var(--green-mid); }
 .badge.expiring { background: var(--amber-bg);  color: var(--amber); }
 .badge.expiring::before { background: var(--amber-mid); animation: pulse 1.5s infinite; }
-.badge.expired  { background: var(--red-bg);    color: var(--red); }
-.badge.expired::before  { background: var(--red-mid); }
+.badge.disabled { background: var(--red-bg);    color: var(--red); }
+.badge.disabled::before { background: var(--red-mid); }
 .badge.grace    { background: var(--blue-bg);   color: var(--blue); }
 .badge.grace::before    { background: var(--blue-mid); }
 .billing-pill { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: 11px; font-weight: 500; }

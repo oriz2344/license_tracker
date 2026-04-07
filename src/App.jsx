@@ -165,18 +165,26 @@ export default function App() {
   }, [modalMode, drawerRecord, data, account, isAdmin]);
 
   // ── Derived rows ─────────────────────────────────────────────────────────────
-  const enriched = useMemo(() => data.map(enrichRow), [data]);
+  const enriched = useMemo(() => data.map(enrichRow).filter((r) => {
+    // Auto-remove subscriptions disabled/overdue for more than 10 days
+    if (r.status === "disabled" && r.days < -10) return false;
+    return true;
+  }), [data]);
   const uniqueClients = useMemo(() => new Set(enriched.map((r) => r.client.toLowerCase())).size, [enriched]);
   const counts   = useMemo(() => ({
     all:      enriched.length,
     expiring: enriched.filter((r) => r.status === "expiring").length,
-    expired:  enriched.filter((r) => r.status === "expired").length,
+    disabled: enriched.filter((r) => r.status === "disabled").length,
     grace:    enriched.filter((r) => r.status === "grace").length,
   }), [enriched]);
 
   const filtered = useMemo(() => {
     let rows = enriched;
-    if (activeTab !== "all") rows = rows.filter((r) => r.status === activeTab);
+    if (activeTab === "disabled") {
+      rows = rows.filter((r) => r.status === "disabled" || r.status === "grace");
+    } else if (activeTab !== "all") {
+      rows = rows.filter((r) => r.status === activeTab);
+    }
     if (search) {
       const q = search.toLowerCase();
       rows = rows.filter((r) =>
@@ -195,7 +203,7 @@ export default function App() {
     });
   }, [enriched, activeTab, search, filterBilling, filterPlan, sortKey, sortAsc]);
 
-  const alertCount = counts.expiring + counts.expired + counts.grace;
+  const alertCount = counts.expiring + counts.disabled + counts.grace;
 
   // ── Sorting ──────────────────────────────────────────────────────────────────
   function handleSort(key) {
@@ -334,7 +342,7 @@ export default function App() {
           <div className="alert-banner">
             <span className="ab-icon">⚠</span>
             <span className="ab-text">
-              {counts.expired} disabled, {counts.grace} in grace period, {counts.expiring} expiring within 30 days — action required.
+              {counts.disabled} disabled, {counts.grace} in grace period, {counts.expiring} expiring within 30 days — action required.
             </span>
             <button className="ab-close" onClick={() => setAlertDismissed(true)}>×</button>
           </div>
@@ -348,9 +356,9 @@ export default function App() {
             icon="📋" variant="brand"
           />
           <MetricCard
-            label="Active" value={counts.all - counts.expiring - counts.expired - counts.grace}
+            label="Active" value={counts.all - counts.expiring - counts.disabled - counts.grace}
             sub="Good standing" icon="✅" variant="ok"
-            pct={(counts.all - counts.expiring - counts.expired - counts.grace) / (enriched.length || 1) * 100}
+            pct={(counts.all - counts.expiring - counts.disabled - counts.grace) / (enriched.length || 1) * 100}
             active={metricFilter === "active"} onClick={() => handleMetricClick("active")}
           />
           <MetricCard
@@ -359,9 +367,9 @@ export default function App() {
             active={metricFilter === "expiring"} onClick={() => handleMetricClick("expiring")}
           />
           <MetricCard
-            label="Disabled / Grace" value={counts.expired + counts.grace}
-            sub={`${counts.expired} disabled · ${counts.grace} grace`} icon="🔴" variant="danger"
-            active={metricFilter === "expired"} onClick={() => handleMetricClick("expired")}
+            label="Disabled / Grace" value={counts.disabled + counts.grace}
+            sub={`${counts.disabled} disabled · ${counts.grace} grace`} icon="🔴" variant="danger"
+            active={metricFilter === "disabled"} onClick={() => handleMetricClick("disabled")}
           />
         </div>
 
@@ -407,7 +415,7 @@ export default function App() {
 
             {/* STATUS TABS */}
             <div className="status-tabs">
-              {[["all","All",counts.all],["active","Active",counts.all-counts.expiring-counts.expired-counts.grace],["expiring","Expiring Soon",counts.expiring],["grace","Grace Period",counts.grace],["expired","Disabled",counts.expired]].map(([k,l,c]) => (
+              {[["all","All",counts.all],["active",STATUS_LABELS.active,counts.all-counts.expiring-counts.disabled-counts.grace],["expiring",STATUS_LABELS.expiring,counts.expiring],["grace",STATUS_LABELS.grace,counts.grace],["disabled",STATUS_LABELS.disabled,counts.disabled]].map(([k,l,c]) => (
                 <button key={k} className={`stab${activeTab === k ? " active" : ""}`} onClick={() => { setActiveTab(k); setMetricFilter(null); }}>
                   {l} <span className="cnt">{c}</span>
                 </button>
@@ -454,8 +462,8 @@ export default function App() {
                         </div>
                       </td></tr>
                     ) : filtered.map((r) => {
-                      const dc = r.days < 0 ? "neg" : r.days <= 30 ? "warn" : "ok";
-                      const dl = r.days < 0 ? `${Math.abs(r.days)}d overdue` : `${r.days}d`;
+                      const dc = isNaN(r.days) ? "ok" : r.days < 0 ? "neg" : r.days <= 30 ? "warn" : "ok";
+                      const dl = isNaN(r.days) ? "—" : r.days < 0 ? `${Math.abs(r.days)}d overdue` : `${r.days}d`;
                       return (
                         <tr key={r.id} className={selected.has(r.id) ? "selected-row" : ""}>
                           <td className="cb-cell"><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>

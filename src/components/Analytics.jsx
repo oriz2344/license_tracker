@@ -8,7 +8,7 @@ export default function Analytics({ data }) {
   const chartInst1 = useRef(null);
 
   const rows        = data.map(enrichRow);
-  const statusCounts = { active: 0, expiring: 0, expired: 0, grace: 0 };
+  const statusCounts = { active: 0, expiring: 0, disabled: 0, grace: 0 };
   rows.forEach((r) => statusCounts[r.status]++);
 
   const totalSeats = rows.reduce((a, b) => a + b.seats, 0);
@@ -21,7 +21,7 @@ export default function Analytics({ data }) {
         data: {
           labels: ["Active", "Expiring Soon", "Grace Period", "Disabled"],
           datasets: [{
-            data: [statusCounts.active, statusCounts.expiring, statusCounts.grace, statusCounts.expired],
+            data: [statusCounts.active, statusCounts.expiring, statusCounts.grace, statusCounts.disabled],
             backgroundColor: ["#52a029", "#d97706", "#3b82f6", "#dc2626"],
             borderWidth: 0, hoverOffset: 6,
           }],
@@ -67,7 +67,7 @@ export default function Analytics({ data }) {
               <canvas ref={chartRef1} />
             </div>
             <div style={{ flex: 1 }}>
-              {[["active","#52a029"],["expiring","#d97706"],["grace","#3b82f6"],["expired","#dc2626"]].map(([s, c]) => (
+              {[["active","#52a029"],["expiring","#d97706"],["grace","#3b82f6"],["disabled","#dc2626"]].map(([s, c]) => (
                 <div key={s} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                   <span style={{ width: 10, height: 10, borderRadius: 3, background: c, flexShrink: 0, display: "inline-block" }} />
                   <span style={{ fontSize: 12.5, color: "var(--muted)", flex: 1 }}>{STATUS_LABELS[s]}</span>
@@ -88,7 +88,7 @@ export default function Analytics({ data }) {
             <div className="timeline">
               {timeline.map((r) => {
                 const w = Math.max(4, ((r.days - minDays) / range) * 100);
-                const c = r.status === "expired" || r.status === "grace" ? "#dc2626" : r.status === "expiring" ? "#d97706" : "#52a029";
+                const c = r.status === "disabled" || r.status === "grace" ? "#dc2626" : r.status === "expiring" ? "#d97706" : "#52a029";
                 return (
                   <div key={r.id} className="tl-item">
                     <span className="tl-name" title={r.client}>

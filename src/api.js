@@ -220,10 +220,8 @@ export async function syncFromPartnerCenter(onProgress) {
   const cleaned = rows.filter((r) => {
     if (!r.renewal) return true; // keep rows with no renewal date
     const days = daysLeft(r.renewal);
-    const status = getStatus(days);
-    // Remove subscriptions disabled for more than 10 days
-    // ("expired"/disabled starts at day -30, so -30 - 10 = -40)
-    if (status === "expired" && days < -40) return false;
+    // Remove subscriptions overdue for more than 10 days
+    if (days < -10) return false;
     return true;
   });
 
@@ -246,7 +244,7 @@ export async function syncFromPartnerCenter(onProgress) {
       for (const r of group) {
         if (!r.renewal) { deduped.push(r); continue; }
         const s = getStatus(daysLeft(r.renewal));
-        if (s !== "expired") deduped.push(r);
+        if (s !== "disabled") deduped.push(r);
       }
     } else {
       deduped.push(...group);

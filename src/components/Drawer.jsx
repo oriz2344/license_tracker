@@ -8,7 +8,7 @@ function SubProgress({ r }) {
   const elapsed   = Math.round((TODAY - startDate) / 86400000);
   const pct       = Math.min(100, Math.max(0, (elapsed / (totalDays || 1)) * 100));
   const barColor  =
-    r.status === "expired" || r.status === "grace" ? "#dc2626"
+    r.status === "disabled" || r.status === "grace" ? "#dc2626"
       : r.status === "expiring" ? "#d97706" : "#ff6701";
   return (
     <div className="rp-track" style={{ height: 6, marginTop: 6 }}>

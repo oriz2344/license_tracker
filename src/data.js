@@ -13,7 +13,7 @@ export const PLANS = [
 export const STATUS_LABELS = {
   active:   "Active",
   expiring: "Expiring Soon",
-  expired:  "Disabled",
+  disabled: "Disabled",
   grace:    "Grace Period",
 };
 
@@ -21,7 +21,7 @@ export const daysLeft = (renewal) =>
   Math.round((new Date(renewal) - TODAY) / 86400000);
 
 export const getStatus = (days) => {
-  if (days < CONFIG.GRACE_PERIOD_DAYS) return "expired";
+  if (days < CONFIG.GRACE_PERIOD_DAYS) return "disabled";
   if (days < 0)                        return "grace";
   if (days <= CONFIG.EXPIRING_THRESHOLD_DAYS) return "expiring";
   return "active";
@@ -46,7 +46,16 @@ export function normalizeClientName(name) {
 
 export function enrichRow(r) {
   const days = daysLeft(r.renewal);
-  return { ...r, days, status: getStatus(days) };
+  const api = (r._status || "").toLowerCase();
+  let status;
+  if (!r.renewal || isNaN(days)) {
+    status = (api === "disabled" || api === "suspended") ? "disabled" : "active";
+  } else {
+    status = getStatus(days);
+  }
+  // API says disabled/suspended → always show as Disabled
+  if (api === "disabled" || api === "suspended") status = "disabled";
+  return { ...r, days, status };
 }
 
 export const SAMPLE_DATA = [
