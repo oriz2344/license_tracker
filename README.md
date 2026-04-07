@@ -1,75 +1,107 @@
-# MS365 License Tracker
+# XOWN MS365 License Tracker
 
-A professional Microsoft 365 license tracker that connects directly to your
-Microsoft Partner Center to automatically sync all client subscription data.
+A professional Microsoft 365 license tracker for Microsoft CSP partners.
+Connects to the Partner Center Insights API to automatically sync all client
+subscription data — no per-customer GDAP consent required.
+
+Built with **Vite + React 18**, **MSAL Browser v3**, and **Chart.js**.
 
 ---
 
 ## File Structure
 
 ```
-ms365-tracker/
-├── index.html       ← Main HTML entry point (open this in your browser)
-├── styles.css       ← All visual styles & dark mode
-├── config.js        ← ⚙️  YOUR SETTINGS GO HERE (credentials, thresholds)
-├── data.js          ← Constants, helpers, sample/fallback data
-├── api.js           ← Microsoft MSAL auth + Partner Center API calls
-├── components.js    ← All React UI components
-├── app.js           ← Main App logic, state management, data sync
-└── README.md        ← This file
+license_tracker/
+├── index.html              ← Vite entry point
+├── vite.config.js          ← Vite dev server config (port 3000)
+├── package.json
+├── .env                    ← Azure credentials + admin emails
+├── assets/
+│   ├── xownsolutions.png   ← Navbar logo
+│   └── favicon.png
+└── src/
+    ├── main.jsx            ← React root + routes (/, /admin)
+    ├── App.jsx             ← Dashboard: table, metrics, filters, sync
+    ├── config.js           ← MSAL / API / threshold settings
+    ├── data.js             ← Constants, helpers, localStorage persistence
+    ├── api.js              ← MSAL auth + Partner Center Insights sync
+    ├── styles.css           ← All styles + dark mode
+    ├── components/
+    │   ├── Analytics.jsx    ← Doughnut chart + renewal timeline
+    │   ├── Drawer.jsx       ← Slide-out license detail panel
+    │   ├── ImportModal.jsx  ← CSV import dialog
+    │   ├── LicenseModal.jsx ← Add / Edit license form
+    │   ├── MetricCard.jsx   ← Summary metric cards
+    │   ├── ShortcutsModal.jsx ← Keyboard shortcuts help
+    │   ├── SyncProgress.jsx ← Sync progress bar
+    │   └── Toast.jsx        ← Toast notifications
+    └── pages/
+        └── AdminLogin.jsx   ← /admin sign-in page (RBAC)
 ```
 
 ---
 
-## Quick Start (Demo Mode)
+## Quick Start
 
-Just open `index.html` in any modern browser — no setup needed.
-It will show your existing 32 client records as demo data.
+```bash
+npm install
+npm run dev          # → http://localhost:3000
+```
+
+Without Azure credentials configured the app shows sample demo data.
 
 ---
 
-## Connecting to Microsoft Partner Center (Live Data)
+## Connecting to Microsoft Partner Center
 
-### Step 1 — Register an Azure App (one-time, ~10 minutes)
+### Step 1 — Register an Azure App (one-time)
 
-1. Go to https://portal.azure.com
+1. Go to <https://portal.azure.com>
 2. Open **Azure Active Directory → App Registrations → New Registration**
 3. Name: `MS365 License Tracker`
-4. Supported account types: **Accounts in any organizational directory**
-5. Redirect URI: **Web** → enter the full path to your `index.html`
-   - Local file example: `file:///C:/Users/YourName/ms365-tracker/index.html`
-   - Hosted example: `https://yourdomain.com/tracker/`
-6. Click **Register**
-7. Copy your **Application (client) ID** and **Directory (tenant) ID**
+4. Supported account types: **Single tenant** (your partner tenant)
+5. Redirect URI: **Single-page application (SPA)** → `http://localhost:3000/`
+6. Click **Register** and copy the **Application (client) ID** and **Directory (tenant) ID**
 
-### Step 2 — Create a Client Secret
+> **Important:** Choose **SPA** platform, not "Web". No client secret is needed —
+> the app uses MSAL Browser with PKCE for secure token acquisition.
 
-1. In your app registration, go to **Certificates & Secrets**
-2. Click **New client secret**, set an expiry, click **Add**
-3. Copy the secret **Value** immediately (it won't be shown again)
-
-### Step 3 — Add API Permissions
+### Step 2 — Add API Permissions
 
 1. Go to **API Permissions → Add a permission**
 2. Add **Microsoft Partner Center** → `user_impersonation`
 3. Add **Microsoft Graph** → `Organization.Read.All`
 4. Click **Grant admin consent** for your organisation
 
-### Step 4 — Edit config.js
+### Step 3 — Configure `.env`
 
-Open `config.js` and fill in:
+Create a `.env` file in the project root:
 
-```javascript
-CLIENT_ID: "paste-your-client-id-here",
-TENANT_ID: "paste-your-tenant-id-here",
+```env
+VITE_CLIENT_ID=your-application-client-id
+VITE_TENANT_ID=your-directory-tenant-id
+VITE_ADMIN_EMAILS=admin@yourdomain.com
 ```
 
-### Step 5 — Open and Sign In
+`VITE_ADMIN_EMAILS` is a comma-separated list of emails allowed to add, edit,
+delete, and import licenses.
 
-1. Open `index.html` in your browser
-2. Click the **🔑 Sign in** button in the top nav
-3. Log in with your Microsoft Partner account
-4. The tracker will automatically fetch all your clients and their subscriptions
+### Step 4 — Add Redirect URIs
+
+In your App Registration → **Authentication**, add all the URIs you will use:
+
+| Environment | Redirect URI |
+|---|---|
+| Local dev | `http://localhost:3000/` |
+| Local admin | `http://localhost:3000/admin` |
+| Production | `https://yourdomain.com/` |
+
+### Step 5 — Sign In
+
+1. Run `npm run dev`
+2. Navigate to `http://localhost:3000/admin`
+3. Sign in with your Microsoft Partner account
+4. The tracker syncs all subscriptions via the Partner Center Insights API
 
 ---
 
@@ -77,42 +109,43 @@ TENANT_ID: "paste-your-tenant-id-here",
 
 | Feature | Description |
 |---|---|
-| **Auto-sync** | Pulls live data from Partner Center on sign-in + every 30 mins |
-| **Status tracking** | Active, Expiring Soon (≤30d), Grace Period, Expired |
+| **Insights API sync** | Pulls data from Partner Center Analytics — no per-customer GDAP needed |
+| **Auto-refresh** | Re-syncs every 30 min (configurable in `config.js`) |
+| **Status tracking** | Active, Expiring Soon (≤ 30 d), Grace Period, Disabled |
+| **Auto-cleanup** | Subscriptions disabled > 10 days are automatically removed on sync |
+| **Smart dedup** | If a customer has the same plan both active and disabled, the disabled copy is removed |
+| **Admin RBAC** | Only emails listed in `VITE_ADMIN_EMAILS` can add / edit / delete / import |
+| **Admin login** | Dedicated sign-in page at `/admin` |
 | **Dark mode** | Toggle with 🌙 button or press **D** |
-| **Search & filter** | Filter by status, billing type, plan |
-| **Analytics** | Charts for status breakdown, revenue by plan/billing |
+| **Search & filter** | Filter by status tab, billing cycle, plan, or free-text search |
+| **Analytics** | Doughnut chart for status breakdown + upcoming renewal timeline |
 | **Export CSV** | Export all or selected records |
 | **Import CSV** | Bulk import from a CSV file |
-| **Add/Edit/Delete** | Manually manage records |
+| **Add / Edit / Delete** | Manually manage records (admin only) |
 | **Keyboard shortcuts** | Press **?** to see all shortcuts |
-
----
-
-## Notes on Costs
-
-The Partner Center API does **not** expose your reseller cost/price for each
-subscription. After syncing, you may need to edit individual records to add
-the correct `Monthly Cost (₦)` value. Costs you enter are saved locally in
-your browser's localStorage and are not overwritten during future syncs.
 
 ---
 
 ## Auto-Refresh Interval
 
-By default the tracker re-syncs every 30 minutes while the page is open.
-To change this, edit `AUTO_REFRESH_MINUTES` in `config.js`.
-Set to `0` to disable auto-refresh.
+By default the tracker re-syncs every **30 minutes** while the page is open.
+Change `AUTO_REFRESH_MINUTES` in `src/config.js` or set to `0` to disable.
+
+---
+
+## Building for Production
+
+```bash
+npm run build      # outputs to dist/
+npm run preview    # preview the production build locally
+```
 
 ---
 
 ## Security Note
 
-Your `CLIENT_ID` and `TENANT_ID` are embedded in `config.js`. These are
-not secret values — they are safe to include in a client-side file. The
-actual authentication happens via Microsoft's secure OAuth2 popup, and no
-passwords or tokens are stored in the file.
+`VITE_CLIENT_ID` and `VITE_TENANT_ID` are **not** secret values — they are safe
+to include in client-side code. Authentication happens via Microsoft's secure
+OAuth 2.0 / PKCE flow; no passwords or tokens are stored in source files.
 
-Keep your **Client Secret** private and never paste it into the HTML/JS files.
-The MSAL library handles token acquisition securely without needing the secret
-in browser code.
+The `.env` file is listed in `.gitignore` and should **never** be committed.
