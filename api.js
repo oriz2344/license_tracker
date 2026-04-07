@@ -12,6 +12,14 @@
 
 // ── MSAL Instance Setup ────────────────────────────────────────────────────────
 
+// ── Fetch with timeout helper ──────────────────────────────────────────────────
+function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal })
+    .finally(() => clearTimeout(timer));
+}
+
 const msalConfig = {
   auth: {
     clientId:    CONFIG.CLIENT_ID,
@@ -90,7 +98,7 @@ async function fetchAllCustomers(token) {
   let url = `${CONFIG.PARTNER_CENTER_API}/v1/customers?size=500`;
 
   while (url) {
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       headers: {
         Authorization: `Bearer ${token}`,
         Accept:        "application/json",
@@ -118,7 +126,7 @@ async function fetchAllCustomers(token) {
  * Docs: GET /v1/customers/{customer-id}/subscriptions
  */
 async function fetchCustomerSubscriptions(token, customerId) {
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${CONFIG.PARTNER_CENTER_API}/v1/customers/${customerId}/subscriptions`,
     {
       headers: {
@@ -208,14 +216,17 @@ async function syncFromPartnerCenter(onProgress) {
   for (let i = 0; i < customers.length; i += BATCH_SIZE) {
     const batch = customers.slice(i, i + BATCH_SIZE);
 
-    const batchResults = await Promise.all(
+    const batchResults = await Promise.allSettled(
       batch.map(async (customer) => {
         const subs = await fetchCustomerSubscriptions(token, customer.id);
         return subs.map((sub) => mapSubscriptionToRow(customer, sub, rowId++));
       })
     );
 
-    batchResults.forEach((customerRows) => rows.push(...customerRows));
+    batchResults.forEach((result) => {
+      if (result.status === "fulfilled") rows.push(...result.value);
+      else console.warn("Failed to fetch subscriptions for a customer:", result.reason);
+    });
     done += batch.length;
     if (onProgress) onProgress(done, total);
   }

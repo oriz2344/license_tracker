@@ -103,7 +103,24 @@ function App() {
       if (rows.length === 0) {
         toast("No subscriptions found in Partner Center", "warning");
       } else {
-        setData(rows);
+        // Merge: preserve user-edited fields (cost, notes) from local data
+        const localMap = new Map();
+        data.forEach((r) => {
+          if (r._tenantId && r._subId) localMap.set(`${r._tenantId}::${r._subId}`, r);
+        });
+        const merged = rows.map((r) => {
+          const local = localMap.get(`${r._tenantId}::${r._subId}`);
+          if (!local) return r;
+          return {
+            ...r,
+            cost:  local.cost || r.cost,
+            notes: (local.notes && local.notes !== "Auto-renew ON" && local.notes !== "Auto-renew OFF") ? local.notes : r.notes,
+          };
+        });
+        // Keep manually-added rows (no _tenantId) that weren't synced
+        const manualRows = data.filter((r) => !r._tenantId);
+        setData([...merged, ...manualRows]);
+        setSelected(new Set());
         setIsLiveData(true);
         setLastSynced(new Date());
         if (!silent) toast(`Synced ${rows.length} subscriptions from Partner Center`, "success");
@@ -244,7 +261,7 @@ function App() {
       headers.join(","),
       ...rows.map((r) =>
         [r.client, r.plan, r.seats, r.cost, fmtDate(r.renewal), r.billing, STATUS_LABELS[r.status], r.days, r.email || "", r.notes || ""]
-          .map((v) => `"${v}"`).join(",")
+          .map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")
       ),
     ];
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
