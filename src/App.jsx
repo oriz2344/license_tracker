@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 
-import { CONFIG, ADMIN_EMAILS, IS_CONFIGURED } from "./config";
+import { CONFIG, ADMIN_EMAILS, IS_CONFIGURED, BACKEND_URL } from "./config";
 import {
   TODAY, PLANS, STATUS_LABELS,
   enrichRow, fmtDate, initials, normalizeClientName,
@@ -49,6 +49,8 @@ export default function App() {
   const [toasts,         setToasts]         = useState([]);
   const [alertDismissed, setAlertDismissed] = useState(false);
   const [metricFilter,   setMetricFilter]   = useState(null);
+  const [emailReminderType, setEmailReminderType] = useState("weekly");
+  const [sendingEmail,   setSendingEmail]   = useState(false);
 
   const searchRef = useRef();
 
@@ -323,6 +325,77 @@ export default function App() {
 
         <button className="nav-icon-btn" title="Toggle dark mode (D)" onClick={() => setDark((d) => !d)}>{dark ? "☀" : "🌙"}</button>
         <button className="nav-icon-btn" title="Keyboard shortcuts (?)" onClick={() => setModalMode("shortcuts")}>⌨</button>
+        {isAdmin && (
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <select 
+              value={emailReminderType} 
+              onChange={(e) => setEmailReminderType(e.target.value)}
+              style={{ padding: "8px", borderRadius: "6px", border: "1px solid var(--border)", background: "var(--bg)", color: "var(--fg)" }}
+            >
+              <option value="weekly">Weekly Digest</option>
+              <option value="5day">5-Day Warning</option>
+              <option value="expiring">Expiring Today</option>
+              <option value="daily">All Daily Reminders</option>
+            </select>
+            <button 
+              className="nav-btn" 
+              onClick={async () => {
+                try {
+                  setSendingEmail(true);
+                  const enrichedData = data.map(enrichRow);
+                  
+                  // Sync to backend first
+                  await fetch(`${BACKEND_URL}/api/sync-data`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ subscriptions: enrichedData })
+                  });
+                  
+                  // Determine which endpoint to call
+                  let endpoint;
+                  let displayName;
+                  
+                  switch(emailReminderType) {
+                    case 'weekly':
+                      endpoint = `${BACKEND_URL}/api/send-weekly-digest`;
+                      displayName = 'Weekly digest';
+                      break;
+                    case '5day':
+                      endpoint = `${BACKEND_URL}/api/send-5-day-reminders`;
+                      displayName = '5-day warning';
+                      break;
+                    case 'expiring':
+                      endpoint = `${BACKEND_URL}/api/send-expiring-today`;
+                      displayName = 'Expiring today';
+                      break;
+                    case 'daily':
+                    default:
+                      endpoint = `${BACKEND_URL}/api/send-reminder-manual`;
+                      displayName = 'Daily reminders';
+                      break;
+                  }
+                  
+                  const response = await fetch(endpoint);
+                  const result = await response.json();
+                  
+                  if (result.success) {
+                    const msg = result.message || `${displayName} sent successfully`;
+                    toast(msg, 'success');
+                  } else {
+                    toast(`Error: ${result.error}`, 'error');
+                  }
+                } catch (error) {
+                  toast(`Failed to send emails: ${error.message}`, 'error');
+                } finally {
+                  setSendingEmail(false);
+                }
+              }}
+              disabled={sendingEmail}
+            >
+              {sendingEmail ? 'Sending...' : 'Send Reminders'}
+            </button>
+          </div>
+        )}
         {isAdmin && <button className="nav-btn" onClick={() => setModalMode("import")}>⬆ Import CSV</button>}
         <button className="nav-btn" onClick={exportCSV}>⬇ Export</button>
         {isAdmin && <button className="nav-btn solid" onClick={() => { setEditRecord(null); setModalMode("add"); }}>+ Add License</button>}
@@ -464,8 +537,9 @@ export default function App() {
                     ) : filtered.map((r) => {
                       const dc = isNaN(r.days) ? "ok" : r.days < 0 ? "neg" : r.days <= 30 ? "warn" : "ok";
                       const dl = isNaN(r.days) ? "—" : r.days < 0 ? `${Math.abs(r.days)}d overdue` : `${r.days}d`;
+                      const uniqueKey = r._subId ? `api-${r._subId}` : `sample-${r.id}`;
                       return (
-                        <tr key={r.id} className={selected.has(r.id) ? "selected-row" : ""}>
+                        <tr key={uniqueKey} className={selected.has(r.id) ? "selected-row" : ""}>
                           <td className="cb-cell"><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                           <td>
                             <div style={{ display: "flex", alignItems: "center" }}>

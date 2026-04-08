@@ -112,8 +112,35 @@ async function fetchCustomerSubscriptions(token, customerId) {
 
 function mapSubscriptionToRow(sub, rowId) {
   const toDate = (iso) => (iso && !iso.startsWith("0001") && !iso.startsWith("1900") && !iso.startsWith("9999") ? iso.slice(0, 10) : "");
-  const billingMap = { "monthly": "Monthly", "annual": "Annual", "full payment": "Annual" };
-  const billing = billingMap[(sub.billingCycleName || "").toLowerCase()] || "Monthly";
+  
+  const startDate = toDate(sub.effectiveStartDate || sub.creationDate || "");
+  const renewalDate = toDate(sub.commitmentEndDate || sub.currentStateEndDate || "");
+  
+  // Calculate billing frequency from date difference
+  let billing = "Annual"; // default
+  if (startDate && renewalDate) {
+    const start = new Date(startDate);
+    const renewal = new Date(renewalDate);
+    const daysDiff = Math.round((renewal - start) / (1000 * 60 * 60 * 24));
+    
+    // Determine billing cycle based on days difference
+    if (daysDiff >= 28 && daysDiff <= 32) {
+      billing = "Monthly";
+    } else if (daysDiff >= 85 && daysDiff <= 95) {
+      billing = "Quarterly";
+    } else if (daysDiff >= 355 && daysDiff <= 380) {
+      billing = "Annual";
+    } else if (daysDiff >= 700 && daysDiff <= 760) {
+      billing = "Biennial";
+    } else if (daysDiff >= 1050 && daysDiff <= 1120) {
+      billing = "Triennial";
+    }
+    // If none match, check billingCycleName as fallback
+    else {
+      const billingMap = { "monthly": "Monthly", "annual": "Annual", "full payment": "Annual", "quarterly": "Quarterly" };
+      billing = billingMap[(sub.billingCycleName || "").toLowerCase()] || "Annual";
+    }
+  }
 
   return {
     id:      rowId,
@@ -121,10 +148,10 @@ function mapSubscriptionToRow(sub, rowId) {
     plan:    sub.friendlyName || sub.productName || "Unknown Plan",
     seats:   sub.licenseCount || 1,
     cost:    0,
-    start:   toDate(sub.effectiveStartDate || sub.creationDate || ""),
-    renewal: toDate(sub.commitmentEndDate || sub.currentStateEndDate || ""),
+    start:   startDate,
+    renewal: renewalDate,
     billing: billing,
-    email:   "",
+    email:   sub.customerEmail || "",
     notes:   "",
     _subId:  sub.id || "",
     _status: (sub.status || "active").toLowerCase(),
@@ -251,6 +278,23 @@ export async function syncFromPartnerCenter(onProgress) {
     }
   }
 
-  console.log(`Post-processing: ${rows.length} → ${cleaned.length} (removed ${rows.length - cleaned.length} stale disabled) → ${deduped.length} (deduped ${cleaned.length - deduped.length})`);
+  if (import.meta.env.DEV) {
+    console.log(`Post-processing: ${rows.length} → ${cleaned.length} (removed ${rows.length - cleaned.length} stale disabled) → ${deduped.length} (deduped ${cleaned.length - deduped.length})`);
+  }
+
+  // Sync data to backend for email reminders
+  try {
+    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
+    await fetch(`${BACKEND_URL}/api/sync-data`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subscriptions: deduped })
+    });
+    console.log('✅ Synced subscription data to email backend');
+  } catch (error) {
+    console.warn('⚠️ Failed to sync to email backend:', error.message);
+    // Don't fail the whole sync if backend is down
+  }
+
   return deduped;
 }

@@ -25,3 +25,6 @@ export const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS || "")
   .filter(Boolean);
 
 export const IS_CONFIGURED = CONFIG.CLIENT_ID !== "YOUR_CLIENT_ID_HERE";
+
+// Backend API URL for email reminders
+export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";

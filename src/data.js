@@ -47,14 +47,19 @@ export function normalizeClientName(name) {
 export function enrichRow(r) {
   const days = daysLeft(r.renewal);
   const api = (r._status || "").toLowerCase();
-  let status;
-  if (!r.renewal || isNaN(days)) {
-    status = (api === "disabled" || api === "suspended") ? "disabled" : "active";
-  } else {
-    status = getStatus(days);
+  
+  // Trust API status first - if explicitly disabled/suspended, show as Disabled
+  if (api === "disabled" || api === "suspended" || api === "deleted" || api === "deprovisioned") {
+    return { ...r, days, status: "disabled" };
   }
-  // API says disabled/suspended → always show as Disabled
-  if (api === "disabled" || api === "suspended") status = "disabled";
+  
+  // API says active (or no API status) - use date to refine
+  if (!r.renewal || isNaN(days)) {
+    return { ...r, days, status: "active" };
+  }
+  
+  // Calculate status from renewal date
+  const status = getStatus(days);
   return { ...r, days, status };
 }
 

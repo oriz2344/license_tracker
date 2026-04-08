@@ -52,6 +52,29 @@ Without Azure credentials configured the app shows sample demo data.
 
 ---
 
+## Status Labels
+
+Subscriptions are automatically categorized into four status types based on their renewal date:
+
+- **Active** — Renewal is more than 30 days away
+- **Expiring Soon** — Renewal is within the next 30 days
+- **Grace Period** — Subscription is 0-30 days overdue (still functional but needs renewal)
+- **Disabled** — Subscription is more than 30 days overdue, or marked as disabled/suspended by the Partner Center API
+
+Status is calculated in real-time and displayed with color-coded badges throughout the app.
+
+---
+
+## Data Quality
+
+The tracker automatically maintains data quality during sync:
+
+- **Auto-removal**: Disabled subscriptions older than 10 days are automatically removed from view to keep the dashboard focused on actionable items
+- **Deduplication**: When a client has both active and disabled subscriptions for the same plan, only the active subscription is retained
+- **Bogus date filtering**: Renewal dates set to year 9999 (sometimes returned by the API for perpetual licenses) are displayed as "—"
+
+---
+
 ## Connecting to Microsoft Partner Center
 
 ### Step 1 — Register an Azure App (one-time)
