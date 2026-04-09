@@ -1,31 +1,40 @@
-/**
- * ============================================================
- *  MS365 License Tracker — Main App
- *
- *  Orchestrates:
- *   - Microsoft Partner Center authentication + sync
- *   - Local data persistence (localStorage fallback)
- *   - All UI state: filters, sorting, modals, toasts
- *   - Auto-refresh on a configurable interval
- * ============================================================
- */
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 
-function App() {
+import { CONFIG, ADMIN_EMAILS, IS_CONFIGURED, BACKEND_URL } from "./config";
+import {
+  TODAY, PLANS, STATUS_LABELS,
+  enrichRow, fmtDate, initials, normalizeClientName,
+  loadLocalData, saveLocalData,
+} from "./data";
+import { signOut, getCurrentAccount, syncFromPartnerCenter, ensureInitialized } from "./api";
+
+import Toast from "./components/Toast";
+import MetricCard from "./components/MetricCard";
+import SyncProgress from "./components/SyncProgress";
+import Drawer from "./components/Drawer";
+import Analytics from "./components/Analytics";
+import ImportModal from "./components/ImportModal";
+import ShortcutsModal from "./components/ShortcutsModal";
+import LicenseModal from "./components/LicenseModal";
+
+export default function App() {
   // ── Auth & Sync State ────────────────────────────────────────────────────────
   const [account,      setAccount]      = useState(() => getCurrentAccount());
-  const [isSigningIn,  setIsSigningIn]  = useState(false);
   const [isSyncing,    setIsSyncing]    = useState(false);
   const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0 });
   const [lastSynced,   setLastSynced]   = useState(null);
   const [syncError,    setSyncError]    = useState(null);
   const [isLiveData,   setIsLiveData]   = useState(false);
 
+  // ── Admin RBAC ───────────────────────────────────────────────────────────────
+  const isAdmin = account && ADMIN_EMAILS.includes(account.username?.toLowerCase());
+
   // ── Data State ───────────────────────────────────────────────────────────────
   const [data,   setData]   = useState(() => loadLocalData());
   const [nextId, setNextId] = useState(() => Math.max(...loadLocalData().map((r) => r.id), 0) + 1);
 
   // ── UI State ─────────────────────────────────────────────────────────────────
-  const [view,           setView]           = useState("table");   // "table" | "analytics"
+  const [view,           setView]           = useState("table");
   const [activeTab,      setActiveTab]      = useState("all");
   const [search,         setSearch]         = useState("");
   const [filterBilling,  setFilterBilling]  = useState("");
@@ -34,12 +43,14 @@ function App() {
   const [sortAsc,        setSortAsc]        = useState(true);
   const [selected,       setSelected]       = useState(new Set());
   const [dark,           setDark]           = useState(() => window.matchMedia("(prefers-color-scheme:dark)").matches);
-  const [modalMode,      setModalMode]      = useState(null);  // null | "add" | "edit" | "import" | "shortcuts"
+  const [modalMode,      setModalMode]      = useState(null);
   const [editRecord,     setEditRecord]     = useState(null);
   const [drawerRecord,   setDrawerRecord]   = useState(null);
   const [toasts,         setToasts]         = useState([]);
   const [alertDismissed, setAlertDismissed] = useState(false);
   const [metricFilter,   setMetricFilter]   = useState(null);
+  const [emailReminderType, setEmailReminderType] = useState("weekly");
+  const [sendingEmail,   setSendingEmail]   = useState(false);
 
   const searchRef = useRef();
 
@@ -56,24 +67,18 @@ function App() {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3500);
   }, []);
 
-  // ── Microsoft Sign In ────────────────────────────────────────────────────────
-  async function handleSignIn() {
-    setIsSigningIn(true);
-    setSyncError(null);
-    try {
-      const acc = await signIn();
-      setAccount(acc);
-      toast("Signed in as " + acc.username, "success");
-      // Immediately trigger a sync after sign-in
-      await handleSync(true);
-    } catch (err) {
-      console.error("Sign-in error:", err);
-      setSyncError(err.message);
-      toast("Sign-in failed: " + err.message, "error");
-    } finally {
-      setIsSigningIn(false);
+  // ── Auto-sync on mount if already signed in ─────────────────────────────────
+  useEffect(() => {
+    async function init() {
+      await ensureInitialized();
+      const acc = getCurrentAccount();
+      if (acc) {
+        setAccount(acc);
+        handleSync(true);
+      }
     }
-  }
+    init();
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Microsoft Sign Out ───────────────────────────────────────────────────────
   async function handleSignOut() {
@@ -103,22 +108,20 @@ function App() {
       if (rows.length === 0) {
         toast("No subscriptions found in Partner Center", "warning");
       } else {
-        // Merge: preserve user-edited fields (cost, notes) from local data
         const localMap = new Map();
         data.forEach((r) => {
-          if (r._tenantId && r._subId) localMap.set(`${r._tenantId}::${r._subId}`, r);
+          if (r._subId) localMap.set(r._subId, r);
         });
         const merged = rows.map((r) => {
-          const local = localMap.get(`${r._tenantId}::${r._subId}`);
+          const local = r._subId ? localMap.get(r._subId) : null;
           if (!local) return r;
           return {
             ...r,
             cost:  local.cost || r.cost,
-            notes: (local.notes && local.notes !== "Auto-renew ON" && local.notes !== "Auto-renew OFF") ? local.notes : r.notes,
+            notes: local.notes || r.notes,
           };
         });
-        // Keep manually-added rows (no _tenantId) that weren't synced
-        const manualRows = data.filter((r) => !r._tenantId);
+        const manualRows = data.filter((r) => !r._subId);
         setData([...merged, ...manualRows]);
         setSelected(new Set());
         setIsLiveData(true);
@@ -149,7 +152,7 @@ function App() {
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
       if (modalMode || drawerRecord) return;
       switch (e.key.toUpperCase()) {
-        case "N": setModalMode("add"); break;
+        case "N": if (isAdmin) setModalMode("add"); break;
         case "F": e.preventDefault(); searchRef.current?.focus(); break;
         case "A": setView("analytics"); break;
         case "T": setView("table"); break;
@@ -161,20 +164,29 @@ function App() {
     };
     document.addEventListener("keydown", fn);
     return () => document.removeEventListener("keydown", fn);
-  }, [modalMode, drawerRecord, data, account]);
+  }, [modalMode, drawerRecord, data, account, isAdmin]);
 
   // ── Derived rows ─────────────────────────────────────────────────────────────
-  const enriched = useMemo(() => data.map(enrichRow), [data]);
+  const enriched = useMemo(() => data.map(enrichRow).filter((r) => {
+    // Auto-remove subscriptions disabled/overdue for more than 10 days
+    if (r.status === "disabled" && r.days < -10) return false;
+    return true;
+  }), [data]);
+  const uniqueClients = useMemo(() => new Set(enriched.map((r) => r.client.toLowerCase())).size, [enriched]);
   const counts   = useMemo(() => ({
     all:      enriched.length,
     expiring: enriched.filter((r) => r.status === "expiring").length,
-    expired:  enriched.filter((r) => r.status === "expired").length,
+    disabled: enriched.filter((r) => r.status === "disabled").length,
     grace:    enriched.filter((r) => r.status === "grace").length,
   }), [enriched]);
 
   const filtered = useMemo(() => {
     let rows = enriched;
-    if (activeTab !== "all") rows = rows.filter((r) => r.status === activeTab);
+    if (activeTab === "disabled") {
+      rows = rows.filter((r) => r.status === "disabled" || r.status === "grace");
+    } else if (activeTab !== "all") {
+      rows = rows.filter((r) => r.status === activeTab);
+    }
     if (search) {
       const q = search.toLowerCase();
       rows = rows.filter((r) =>
@@ -193,7 +205,7 @@ function App() {
     });
   }, [enriched, activeTab, search, filterBilling, filterPlan, sortKey, sortAsc]);
 
-  const alertCount = counts.expiring + counts.expired + counts.grace;
+  const alertCount = counts.expiring + counts.disabled + counts.grace;
 
   // ── Sorting ──────────────────────────────────────────────────────────────────
   function handleSort(key) {
@@ -208,12 +220,13 @@ function App() {
 
   // ── CRUD ─────────────────────────────────────────────────────────────────────
   function handleSave(form) {
+    const normalized = { ...form, client: normalizeClientName(form.client) };
     if (editRecord) {
-      setData((d) => d.map((r) => r.id === editRecord.id ? { ...form, id: editRecord.id } : r));
+      setData((d) => d.map((r) => r.id === editRecord.id ? { ...normalized, id: editRecord.id } : r));
       toast("License updated", "success");
     } else {
       const id = nextId; setNextId((n) => n + 1);
-      setData((d) => [...d, { ...form, id }]);
+      setData((d) => [...d, { ...normalized, id }]);
       toast("License added", "success");
     }
   }
@@ -238,7 +251,7 @@ function App() {
     toast(`Imported ${rows.length} records`, "success");
   }
 
-  // ── Selection ─────────────────────────────────────────────────────────────────
+  // ── Selection ────────────────────────────────────────────────────────────────
   function toggleSelect(id) {
     setSelected((s) => { const ns = new Set(s); ns.has(id) ? ns.delete(id) : ns.add(id); return ns; });
   }
@@ -247,20 +260,20 @@ function App() {
     else setSelected(new Set(filtered.map((r) => r.id)));
   }
 
-  // ── Metric filter click ───────────────────────────────────────────────────────
+  // ── Metric filter click ──────────────────────────────────────────────────────
   function handleMetricClick(tab) {
     if (metricFilter === tab) { setMetricFilter(null); setActiveTab("all"); }
     else { setMetricFilter(tab); setActiveTab(tab); }
   }
 
-  // ── Export CSV ────────────────────────────────────────────────────────────────
+  // ── Export CSV ───────────────────────────────────────────────────────────────
   function exportCSV() {
     const rows    = selected.size > 0 ? filtered.filter((r) => selected.has(r.id)) : filtered;
-    const headers = ["Client", "Plan", "Seats", "Monthly Cost (₦)", "Renewal Date", "Billing", "Status", "Days Left", "Email", "Notes"];
+    const headers = ["Client", "Plan", "Seats", "Renewal Date", "Billing", "Status", "Days Left", "Email", "Notes"];
     const lines   = [
       headers.join(","),
       ...rows.map((r) =>
-        [r.client, r.plan, r.seats, r.cost, fmtDate(r.renewal), r.billing, STATUS_LABELS[r.status], r.days, r.email || "", r.notes || ""]
+        [r.client, r.plan, r.seats, fmtDate(r.renewal), r.billing, STATUS_LABELS[r.status], r.days, r.email || "", r.notes || ""]
           .map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")
       ),
     ];
@@ -275,17 +288,15 @@ function App() {
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <>
-      {/* SYNC PROGRESS OVERLAY */}
       {isSyncing && <SyncProgress current={syncProgress.current} total={syncProgress.total} />}
 
       {/* NAV */}
       <nav className="nav">
         <div className="nav-logo">
-          <img src="assets/xownsolutions.png" alt="XOWN Solutions" className="nav-logo-img" />
+          <img src="/assets/xownsolutions.png" alt="XOWN Solutions" className="nav-logo-img" />
         </div>
         <div className="nav-spacer" />
 
-        {/* Live data indicator */}
         {isLiveData && lastSynced && (
           <div className="nav-pill">
             <span className="live-dot" />
@@ -297,7 +308,6 @@ function App() {
           <span className="nav-date">{TODAY.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</span>
         </div>
 
-        {/* Auth buttons */}
         {account ? (
           <>
             <button className="nav-btn" onClick={() => handleSync(false)} disabled={isSyncing} title="Refresh from Partner Center (R)">
@@ -308,30 +318,91 @@ function App() {
             </button>
           </>
         ) : IS_CONFIGURED ? (
-          <button className="nav-btn solid" onClick={handleSignIn} disabled={isSigningIn}>
-            {isSigningIn ? "Signing in…" : "🔑 Sign in"}
-          </button>
+          <a href="/admin" className="nav-btn solid" style={{ textDecoration: "none" }}>
+            🔑 Admin Login
+          </a>
         ) : null}
 
         <button className="nav-icon-btn" title="Toggle dark mode (D)" onClick={() => setDark((d) => !d)}>{dark ? "☀" : "🌙"}</button>
         <button className="nav-icon-btn" title="Keyboard shortcuts (?)" onClick={() => setModalMode("shortcuts")}>⌨</button>
-        <button className="nav-btn" onClick={() => setModalMode("import")}>⬆ Import CSV</button>
+        {isAdmin && (
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <select 
+              value={emailReminderType} 
+              onChange={(e) => setEmailReminderType(e.target.value)}
+              style={{ padding: "8px", borderRadius: "6px", border: "1px solid var(--border)", background: "var(--bg)", color: "var(--fg)" }}
+            >
+              <option value="weekly">Weekly Digest</option>
+              <option value="5day">5-Day Warning</option>
+              <option value="expiring">Expiring Today</option>
+              <option value="daily">All Daily Reminders</option>
+            </select>
+            <button 
+              className="nav-btn" 
+              onClick={async () => {
+                try {
+                  setSendingEmail(true);
+                  const enrichedData = data.map(enrichRow);
+                  
+                  // Sync to backend first
+                  await fetch(`${BACKEND_URL}/api/sync-data`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ subscriptions: enrichedData })
+                  });
+                  
+                  // Determine which endpoint to call
+                  let endpoint;
+                  let displayName;
+                  
+                  switch(emailReminderType) {
+                    case 'weekly':
+                      endpoint = `${BACKEND_URL}/api/send-weekly-digest`;
+                      displayName = 'Weekly digest';
+                      break;
+                    case '5day':
+                      endpoint = `${BACKEND_URL}/api/send-5-day-reminders`;
+                      displayName = '5-day warning';
+                      break;
+                    case 'expiring':
+                      endpoint = `${BACKEND_URL}/api/send-expiring-today`;
+                      displayName = 'Expiring today';
+                      break;
+                    case 'daily':
+                    default:
+                      endpoint = `${BACKEND_URL}/api/send-reminder-manual`;
+                      displayName = 'Daily reminders';
+                      break;
+                  }
+                  
+                  const response = await fetch(endpoint);
+                  const result = await response.json();
+                  
+                  if (result.success) {
+                    const msg = result.message || `${displayName} sent successfully`;
+                    toast(msg, 'success');
+                  } else {
+                    toast(`Error: ${result.error}`, 'error');
+                  }
+                } catch (error) {
+                  toast(`Failed to send emails: ${error.message}`, 'error');
+                } finally {
+                  setSendingEmail(false);
+                }
+              }}
+              disabled={sendingEmail}
+            >
+              {sendingEmail ? 'Sending...' : 'Send Reminders'}
+            </button>
+          </div>
+        )}
+        {isAdmin && <button className="nav-btn" onClick={() => setModalMode("import")}>⬆ Import CSV</button>}
         <button className="nav-btn" onClick={exportCSV}>⬇ Export</button>
-        <button className="nav-btn solid" onClick={() => { setEditRecord(null); setModalMode("add"); }}>+ Add License</button>
+        {isAdmin && <button className="nav-btn solid" onClick={() => { setEditRecord(null); setModalMode("add"); }}>+ Add License</button>}
       </nav>
 
       <div className="app-wrap">
 
-        {/* LOGIN BANNER — shown when not signed in */}
-        {!account && (
-          <LoginBanner
-            onSignIn={handleSignIn}
-            isLoading={isSigningIn}
-            isConfigured={IS_CONFIGURED}
-          />
-        )}
-
-        {/* SYNC ERROR BANNER */}
         {syncError && (
           <div className="alert-banner" style={{ background: "var(--red-bg)", borderColor: "var(--red-mid)" }}>
             <span className="ab-icon">✕</span>
@@ -340,12 +411,11 @@ function App() {
           </div>
         )}
 
-        {/* ALERT BANNER */}
         {!alertDismissed && alertCount > 0 && (
           <div className="alert-banner">
             <span className="ab-icon">⚠</span>
             <span className="ab-text">
-              {counts.expired} expired, {counts.grace} in grace period, {counts.expiring} expiring within 30 days — action required.
+              {counts.disabled} disabled, {counts.grace} in grace period, {counts.expiring} expiring within 30 days — action required.
             </span>
             <button className="ab-close" onClick={() => setAlertDismissed(true)}>×</button>
           </div>
@@ -355,13 +425,13 @@ function App() {
         <div className="metrics">
           <MetricCard
             label="Total Licenses" value={enriched.length}
-            sub={`${enriched.reduce((a, b) => a + b.seats, 0)} seats · ${fmtNaira(enriched.reduce((a, b) => a + b.cost, 0))}/mo`}
+            sub={`${uniqueClients} clients · ${enriched.reduce((a, b) => a + b.seats, 0)} seats`}
             icon="📋" variant="brand"
           />
           <MetricCard
-            label="Active" value={counts.all - counts.expiring - counts.expired - counts.grace}
+            label="Active" value={counts.all - counts.expiring - counts.disabled - counts.grace}
             sub="Good standing" icon="✅" variant="ok"
-            pct={(counts.all - counts.expiring - counts.expired - counts.grace) / (enriched.length || 1) * 100}
+            pct={(counts.all - counts.expiring - counts.disabled - counts.grace) / (enriched.length || 1) * 100}
             active={metricFilter === "active"} onClick={() => handleMetricClick("active")}
           />
           <MetricCard
@@ -370,9 +440,9 @@ function App() {
             active={metricFilter === "expiring"} onClick={() => handleMetricClick("expiring")}
           />
           <MetricCard
-            label="Expired / Grace" value={counts.expired + counts.grace}
-            sub={`${counts.expired} expired · ${counts.grace} grace`} icon="🔴" variant="danger"
-            active={metricFilter === "expired"} onClick={() => handleMetricClick("expired")}
+            label="Disabled / Grace" value={counts.disabled + counts.grace}
+            sub={`${counts.disabled} disabled · ${counts.grace} grace`} icon="🔴" variant="danger"
+            active={metricFilter === "disabled"} onClick={() => handleMetricClick("disabled")}
           />
         </div>
 
@@ -418,7 +488,7 @@ function App() {
 
             {/* STATUS TABS */}
             <div className="status-tabs">
-              {[["all","All",counts.all],["active","Active",counts.all-counts.expiring-counts.expired-counts.grace],["expiring","Expiring",counts.expiring],["grace","Grace",counts.grace],["expired","Expired",counts.expired]].map(([k,l,c]) => (
+              {[["all","All",counts.all],["active",STATUS_LABELS.active,counts.all-counts.expiring-counts.disabled-counts.grace],["expiring",STATUS_LABELS.expiring,counts.expiring],["grace",STATUS_LABELS.grace,counts.grace],["disabled",STATUS_LABELS.disabled,counts.disabled]].map(([k,l,c]) => (
                 <button key={k} className={`stab${activeTab === k ? " active" : ""}`} onClick={() => { setActiveTab(k); setMetricFilter(null); }}>
                   {l} <span className="cnt">{c}</span>
                 </button>
@@ -431,7 +501,7 @@ function App() {
                 <span>{selected.size} selected</span>
                 <div className="bulk-spacer" />
                 <button className="bulk-btn" onClick={exportCSV}>⬇ Export selected</button>
-                <button className="bulk-btn danger" onClick={handleBulkDelete}>🗑 Delete selected</button>
+                {isAdmin && <button className="bulk-btn danger" onClick={handleBulkDelete}>🗑 Delete selected</button>}
                 <button className="bulk-btn" onClick={() => setSelected(new Set())}>✕ Clear</button>
               </div>
             )}
@@ -448,7 +518,6 @@ function App() {
                       <Th k="client"  label="Client" />
                       <Th k="plan"    label="Plan" />
                       <Th k="seats"   label="Seats"       center />
-                      <Th k="cost"    label="Monthly Cost" />
                       <Th k="renewal" label="Renewal" />
                       <Th k="billing" label="Billing" />
                       <Th k="days"    label="Days Left"   center />
@@ -458,7 +527,7 @@ function App() {
                   </thead>
                   <tbody>
                     {filtered.length === 0 ? (
-                      <tr><td colSpan={10}>
+                      <tr><td colSpan={9}>
                         <div className="empty-state">
                           <div className="ei">🔍</div>
                           <div className="et">No licenses found</div>
@@ -466,10 +535,11 @@ function App() {
                         </div>
                       </td></tr>
                     ) : filtered.map((r) => {
-                      const dc = r.days < 0 ? "neg" : r.days <= 30 ? "warn" : "ok";
-                      const dl = r.days < 0 ? `${Math.abs(r.days)}d overdue` : `${r.days}d`;
+                      const dc = isNaN(r.days) ? "ok" : r.days < 0 ? "neg" : r.days <= 30 ? "warn" : "ok";
+                      const dl = isNaN(r.days) ? "—" : r.days < 0 ? `${Math.abs(r.days)}d overdue` : `${r.days}d`;
+                      const uniqueKey = r._subId ? `api-${r._subId}` : `sample-${r.id}`;
                       return (
-                        <tr key={r.id} className={selected.has(r.id) ? "selected-row" : ""}>
+                        <tr key={uniqueKey} className={selected.has(r.id) ? "selected-row" : ""}>
                           <td className="cb-cell"><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                           <td>
                             <div style={{ display: "flex", alignItems: "center" }}>
@@ -482,7 +552,6 @@ function App() {
                           </td>
                           <td>{r.plan}</td>
                           <td style={{ textAlign: "center" }}>{r.seats}</td>
-                          <td>{fmtNaira(r.cost)}</td>
                           <td>{fmtDate(r.renewal)}</td>
                           <td><span className={`billing-pill ${r.billing.toLowerCase()}`}>{r.billing}</span></td>
                           <td style={{ textAlign: "center" }}><span className={`days-val ${dc}`}>{dl}</span></td>
@@ -490,8 +559,8 @@ function App() {
                           <td>
                             <div className="row-actions">
                               <button className="act-btn view-btn" onClick={() => setDrawerRecord(r)}>View</button>
-                              <button className="act-btn" onClick={() => { setEditRecord(r); setModalMode("edit"); }}>Edit</button>
-                              <button className="act-btn danger" onClick={() => handleDelete(r.id)}>Del</button>
+                              {isAdmin && <button className="act-btn" onClick={() => { setEditRecord(r); setModalMode("edit"); }}>Edit</button>}
+                              {isAdmin && <button className="act-btn danger" onClick={() => handleDelete(r.id)}>Del</button>}
                             </div>
                           </td>
                         </tr>
@@ -502,11 +571,10 @@ function App() {
               </div>
             </div>
 
-            {/* TABLE FOOTER */}
             {filtered.length > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 4px", fontSize: 12, color: "var(--subtle)" }}>
                 <span>Showing {filtered.length} of {enriched.length} licenses{isLiveData ? " · Live from Partner Center" : " · Demo data"}</span>
-                <span>Total: {fmtNaira(filtered.reduce((a, b) => a + b.cost, 0))}/mo · {filtered.reduce((a, b) => a + b.seats, 0)} seats</span>
+                <span>Total: {filtered.reduce((a, b) => a + b.seats, 0)} seats</span>
               </div>
             )}
           </>
@@ -515,8 +583,8 @@ function App() {
 
       {/* DETAIL DRAWER */}
       {drawerRecord && (
-        <Drawer record={drawerRecord} onClose={() => setDrawerRecord(null)}
-          onEdit={(r) => { setEditRecord(r); setModalMode("edit"); }} onDelete={handleDelete} />
+        <Drawer record={drawerRecord} allData={data} onClose={() => setDrawerRecord(null)}
+          onEdit={(r) => { setEditRecord(r); setModalMode("edit"); }} onDelete={handleDelete} isAdmin={isAdmin} />
       )}
 
       {/* MODALS */}
@@ -527,11 +595,7 @@ function App() {
       {modalMode === "import"    && <ImportModal    onClose={() => setModalMode(null)} onImport={handleImport} />}
       {modalMode === "shortcuts" && <ShortcutsModal onClose={() => setModalMode(null)} />}
 
-      {/* TOASTS */}
       <Toast toasts={toasts} />
     </>
   );
 }
-
-// ── Boot ───────────────────────────────────────────────────────────────────────
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);

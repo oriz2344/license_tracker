@@ -1,62 +1,69 @@
-/**
- * ============================================================
- *  MS365 License Tracker — Data Layer
- *  Constants, helpers, sample data, and localStorage persistence.
- * ============================================================
- */
+import { CONFIG } from "./config.js";
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const TODAY = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
+export const TODAY = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
 
 const STORAGE_KEY = "ms365_tracker_v3";
 
-const PLANS = [
+export const PLANS = [
   "Business Basic", "Business Standard", "Business Premium",
   "Apps for Business", "Apps for Enterprise",
   "E1", "E3", "E5", "F1", "F3", "A3 faculty",
 ];
 
-const STATUS_LABELS = {
+export const STATUS_LABELS = {
   active:   "Active",
   expiring: "Expiring Soon",
-  expired:  "Expired",
+  disabled: "Disabled",
   grace:    "Grace Period",
 };
 
-// ── Helper Functions ───────────────────────────────────────────────────────────
-
-const daysLeft = (renewal) =>
+export const daysLeft = (renewal) =>
   Math.round((new Date(renewal) - TODAY) / 86400000);
 
-const getStatus = (days) => {
-  if (days < CONFIG.GRACE_PERIOD_DAYS) return "expired";
+export const getStatus = (days) => {
+  if (days < CONFIG.GRACE_PERIOD_DAYS) return "disabled";
   if (days < 0)                        return "grace";
   if (days <= CONFIG.EXPIRING_THRESHOLD_DAYS) return "expiring";
   return "active";
 };
 
-const fmtDate = (d) => {
+export const fmtDate = (d) => {
   if (!d) return "—";
   const [y, m, day] = d.split("-");
   return `${day}/${m}/${y}`;
 };
 
-const fmtNaira = (n) =>
+export const fmtNaira = (n) =>
   CONFIG.CURRENCY_SYMBOL + Number(n).toLocaleString("en-NG");
 
-const initials = (name) =>
+export const initials = (name) =>
   (name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
 
-function enrichRow(r) {
-  const days = daysLeft(r.renewal);
-  return { ...r, days, status: getStatus(days) };
+export function normalizeClientName(name) {
+  return (name || "").trim().replace(/\s+/g, " ")
+    .replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1));
 }
 
-// ── Fallback Sample Data ───────────────────────────────────────────────────────
-// Used when NOT connected to Partner Center (demo / offline mode).
+export function enrichRow(r) {
+  const days = daysLeft(r.renewal);
+  const api = (r._status || "").toLowerCase();
+  
+  // Trust API status first - if explicitly disabled/suspended, show as Disabled
+  if (api === "disabled" || api === "suspended" || api === "deleted" || api === "deprovisioned") {
+    return { ...r, days, status: "disabled" };
+  }
+  
+  // API says active (or no API status) - use date to refine
+  if (!r.renewal || isNaN(days)) {
+    return { ...r, days, status: "active" };
+  }
+  
+  // Calculate status from renewal date
+  const status = getStatus(days);
+  return { ...r, days, status };
+}
 
-const SAMPLE_DATA = [
+export const SAMPLE_DATA = [
   { id:1,  client:"247 Travels",        plan:"Business Basic",    seats:99,  cost:742500,  start:"2025-05-04", renewal:"2026-05-04", billing:"Annual",  email:"", notes:"" },
   { id:2,  client:"Manfieldsolicitors", plan:"Business Standard", seats:9,   cost:135000,  start:"2025-06-02", renewal:"2026-06-02", billing:"Annual",  email:"", notes:"" },
   { id:3,  client:"Manfieldsolicitors", plan:"Business Basic",    seats:9,   cost:67500,   start:"2025-05-04", renewal:"2026-05-04", billing:"Annual",  email:"", notes:"" },
@@ -91,9 +98,7 @@ const SAMPLE_DATA = [
   { id:32, client:"Barlanti",           plan:"Business Basic",    seats:2,   cost:15000,   start:"2025-03-22", renewal:"2026-03-22", billing:"Annual",  email:"", notes:"" },
 ];
 
-// ── localStorage Persistence ───────────────────────────────────────────────────
-
-function loadLocalData() {
+export function loadLocalData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw);
@@ -101,21 +106,18 @@ function loadLocalData() {
   return SAMPLE_DATA;
 }
 
-function saveLocalData(data) {
+export function saveLocalData(data) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch (e) {}
 }
 
-// ── CSV Parser (for manual import fallback) ────────────────────────────────────
-
-// Sanitize cell values to prevent CSV injection (formula injection in Excel)
 function sanitizeCell(val) {
   if (typeof val !== "string") return val;
   return val.replace(/^[=+@\-]+/, "");
 }
 
-function parseCSV(text) {
+export function parseCSV(text) {
   const lines = text.trim().split("\n");
   if (lines.length < 2) throw new Error("CSV must have a header row and at least one data row.");
   const headers = lines[0].split(",").map((h) => h.replace(/"/g, "").trim().toLowerCase());
@@ -125,7 +127,7 @@ function parseCSV(text) {
     headers.forEach((h, j) => (obj[h] = vals[j] || ""));
     return {
       id: Date.now() + i,
-      client:  sanitizeCell(obj["client name"] || obj["client"] || ""),
+      client:  normalizeClientName(sanitizeCell(obj["client name"] || obj["client"] || "")),
       plan:    sanitizeCell(obj["ms 365 plan"] || obj["plan"] || ""),
       seats:   parseInt(obj["seats"]) || 1,
       cost:    parseInt(obj["monthly cost"] || obj["cost"]) || 0,

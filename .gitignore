@@ -1,1 +1,10 @@
 node_modules/
+dist/
+.env
+.env.example
+EMAIL_README.md
+EMAIL_SETUP.md
+IMPLEMENTATION_SUMMARY.md
+PLESK_DEPLOYMENT.md
+QUICKSTART_EMAIL.md
+start-backend.bat

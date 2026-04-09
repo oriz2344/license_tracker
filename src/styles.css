@@ -276,8 +276,8 @@ input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--brand); cu
 .badge.active::before   { background: var(--green-mid); }
 .badge.expiring { background: var(--amber-bg);  color: var(--amber); }
 .badge.expiring::before { background: var(--amber-mid); animation: pulse 1.5s infinite; }
-.badge.expired  { background: var(--red-bg);    color: var(--red); }
-.badge.expired::before  { background: var(--red-mid); }
+.badge.disabled { background: var(--red-bg);    color: var(--red); }
+.badge.disabled::before { background: var(--red-mid); }
 .badge.grace    { background: var(--blue-bg);   color: var(--blue); }
 .badge.grace::before    { background: var(--blue-mid); }
 .billing-pill { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: 11px; font-weight: 500; }
@@ -324,7 +324,7 @@ tr:hover .row-actions, .row-actions:focus-within { opacity: 1; }
 
 /* ── Detail Drawer ─────────────────────────────────────────── */
 .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 200; display: flex; justify-content: flex-end; }
-.drawer { width: 400px; max-width: 95vw; height: 100%; background: var(--surface); box-shadow: var(--sh-lg); animation: pop .22s ease; overflow-y: auto; display: flex; flex-direction: column; }
+.drawer { width: 440px; max-width: 95vw; height: 100%; background: var(--surface); box-shadow: var(--sh-lg); animation: pop .22s ease; overflow-y: auto; display: flex; flex-direction: column; }
 .drawer-head { padding: 22px 24px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
 .drawer-avatar { width: 44px; height: 44px; border-radius: 12px; background: var(--brand-lt); color: var(--brand); font-size: 16px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; font-family: 'Syne', sans-serif; flex-shrink: 0; }
 .drawer-head-info h2 { font-size: 16px; font-weight: 600; margin-bottom: 2px; }
@@ -342,6 +342,17 @@ tr:hover .row-actions, .row-actions:focus-within { opacity: 1; }
 .rp-fill  { height: 100%; border-radius: 99px; transition: width .8s ease; }
 .notes-box { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r); padding: 12px 14px; font-size: 13px; color: var(--muted); min-height: 60px; }
 .drawer-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; gap: 8px; }
+
+/* ── Drawer Client Profile ─────────────────────────────────── */
+.drawer-client-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+.drawer-sub-list { display: flex; flex-direction: column; gap: 10px; }
+.drawer-sub-item { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r); padding: 12px 14px; transition: border-color var(--transition); }
+.drawer-sub-item:hover { border-color: var(--brand-lt); }
+.drawer-sub-active { border-color: var(--brand); background: var(--brand-lt); }
+.drawer-sub-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.drawer-sub-plan { font-size: 13px; font-weight: 600; }
+.drawer-sub-details { display: flex; gap: 12px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.drawer-sub-actions { display: flex; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
 
 /* ── Modal ─────────────────────────────────────────────────── */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 300; display: flex; align-items: center; justify-content: center; padding: 16px; }
@@ -408,4 +419,128 @@ tr:hover .row-actions, .row-actions:focus-within { opacity: 1; }
   .form-row { grid-template-columns: 1fr; }
   .nav .nav-date, .kbd-hint { display: none; }
   .view-bar { flex-wrap: wrap; }
+  .admin-login-card { margin: 0 16px; padding: 32px 24px; }
+}
+
+/* ── Admin Login Page ──────────────────────────────────────── */
+.admin-login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  padding: 24px;
+}
+
+.admin-login-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: 48px 44px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: var(--sh-lg);
+  text-align: center;
+  animation: fadeUp .4s ease;
+}
+
+.admin-login-logo {
+  margin-bottom: 28px;
+}
+
+.admin-login-logo img {
+  height: 44px;
+  object-fit: contain;
+}
+
+.admin-login-title {
+  font-family: 'Syne', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+.admin-login-sub {
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-bottom: 32px;
+}
+
+.admin-login-error {
+  background: var(--red-bg);
+  border: 1px solid var(--red-mid);
+  border-radius: var(--r);
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--red);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  text-align: left;
+  animation: pop .2s ease;
+}
+
+.admin-login-btn {
+  width: 100%;
+  height: 48px;
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  transition: all var(--transition);
+}
+
+.admin-login-btn:hover {
+  background: var(--surface2);
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(255,103,1,.1);
+}
+
+.admin-login-btn:active {
+  transform: scale(.98);
+}
+
+.admin-login-btn:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+.admin-login-unconfigured {
+  background: var(--amber-bg);
+  border: 1px solid var(--amber-mid);
+  border-radius: var(--r);
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--amber);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+}
+
+.admin-login-footer {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.admin-login-back {
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color var(--transition);
+}
+
+.admin-login-back:hover {
+  color: var(--brand);
 }
